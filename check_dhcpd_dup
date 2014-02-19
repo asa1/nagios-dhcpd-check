@@ -1,0 +1,56 @@
+#!/bin/bash
+
+# Check the dhcpd.conf file for duplicate IP addresses & MAC addresses
+# Usage: To override default dhcpd.conf path, enter path as first argument (check_dhcpd_dup </path/to/dhcpd.conf>)
+# Notes:
+# - Only checks for duplicate fixed address entries, doesn't not handle pools.
+# - Only tested on Debian 7 with the ISC version of dhpcd
+#
+# NRPE Exit Codes, for reference:
+# 0: OK
+# 1: WARNING
+# 2: CRITICAL
+# 3: UNKNOWN
+
+# If an argument has been passed, set it as the dhcpd.conf path:
+if [ $# -gt 1 ]; then
+  echo "ERROR: Invalid number of arguments specified"
+  exit 3
+elif [ $# -eq 1 ]; then
+  dhcpd_conf="$1"
+else
+  dhcpd_conf=/etc/dhcp/dhcpd.conf
+fi
+
+#Make sure config file exists:
+if [ ! -e "$dhcpd_conf" ] || [ ! -r "$dhcpd_conf" ]; then
+  echo "ERROR: "$dhcpd_conf" not found, or is not readable"
+  exit 2
+fi
+
+#Duplicate IP Address Check:
+dup_ip=$(grep fixed-address "$dhcpd_conf"|grep -v "^\ *#"|grep -Eo '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}'|sort|uniq -d)
+
+#Duplicate MAC Address Check:
+dup_mac=$(grep "hardware ethernet" "$dhcpd_conf"|grep -v "^\ *#"|grep -Eo '([[:xdigit:]]{1,2}:){5}[[:xdigit:]]{1,2}'|sort|uniq -di)
+
+problem_found=0
+error_message=""
+
+#If problems are found, then put together an error message, and exit accordingly:
+if [ -n "$dup_ip" ]; then
+  problem_found=1
+  error_message="ERROR: Duplicate IP found in $dhcpd_conf: $dup_ip\n"
+fi
+if [ -n "$dup_mac" ]; then
+  problem_found=1
+  error_message="${error_message}ERROR: Duplicate MAC found in $dhcpd_conf: $dup_mac\n"
+fi
+
+if [ "$problem_found" -ne 0 ]; then
+  echo -e "$error_message"
+  exit 2
+else
+  echo "OK: No duplicate MAC or IP addresses found in $dhcpd_conf"
+  exit 0
+fi
